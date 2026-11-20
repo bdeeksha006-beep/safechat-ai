@@ -30,18 +30,9 @@ async function post(url, payload, useJwt) {
   return data
 }
 
-// Try Supabase function; on ANY failure fall back to Vercel API.
+// Direct Vercel API only (skip Supabase Edge Functions for simplicity)
 async function call(fn, payload) {
-  try {
-    return await post(`${FN_BASE}/${fn}`, payload, true)
-  } catch (err) {
-    try {
-      return await post(`${API_BASE}/${fn}`, payload, true)
-    } catch (err2) {
-      // Surface the more informative error
-      throw err2.status === 404 ? err : err2
-    }
-  }
+  return await post(`${API_BASE}/${fn}`, payload, true)
 }
 
 export const analyzeConversation = (payload) => call('analyze', payload)
