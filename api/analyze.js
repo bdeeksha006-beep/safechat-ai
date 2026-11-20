@@ -40,7 +40,13 @@ export default async function handler(req, res) {
   let body
   try { body = JSON.parse(req.body || '{}') } catch { return res.status(400).json({ error: 'Invalid JSON' }) }
   const { conversationId, messages } = body
-  if (!conversationId || !Array.isArray(messages)) return res.status(400).json({ error: 'conversationId and messages[] required' })
+
+  // Better error messages
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' })
+  if (!Array.isArray(messages)) return res.status(400).json({ error: 'messages must be an array' })
+  if (!messages.length) return res.status(400).json({ error: 'messages array is empty' })
+
+  console.log('Analysis request:', { userId: user.id, conversationId, messageCount: messages.length })
 
   const sb = admin()
 
