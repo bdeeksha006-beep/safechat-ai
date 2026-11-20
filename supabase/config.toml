@@ -1,0 +1,20 @@
+project_id = "safechat-ai"
+
+[functions.analyze]
+verify_jwt = true
+
+[functions.ask]
+verify_jwt = true
+
+[db]
+major_version = 15
+
+[db.migrations]
+schema_paths = ["./migrations"]
+
+[storage.buckets.chat-files]
+public = false
+file_size_limit = "15MiB"
+
+[realtime]
+enabled = true
