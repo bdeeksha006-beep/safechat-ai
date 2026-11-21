@@ -59,12 +59,23 @@ export default function SettingsPage() {
       alert('Push notifications not supported in this browser')
       return
     }
+    console.log('Toggle push clicked, current state:', pushEnabled)
     if (pushEnabled) {
       await unsubscribeFromPush(user.id)
       setPushEnabled(false)
+      console.log('Push unsubscribed')
     } else {
-      const sub = await subscribeToPush(user.id)
-      setPushEnabled(!!sub)
+      try {
+        const sub = await subscribeToPush(user.id)
+        console.log('Push subscription result:', sub)
+        setPushEnabled(!!sub)
+        if (!sub) {
+          alert('Failed to enable push notifications. Check browser console for details.')
+        }
+      } catch (e) {
+        console.error('Push subscription error:', e)
+        alert('Error enabling push notifications: ' + e.message)
+      }
     }
   }
 
