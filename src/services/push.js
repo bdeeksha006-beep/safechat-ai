@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''
 
+console.log('VAPID_PUBLIC_KEY loaded:', VAPID_PUBLIC_KEY ? 'YES (length: ' + VAPID_PUBLIC_KEY.length + ')' : 'NO - EMPTY')
+
 // Convert VAPID key to Uint8Array
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4)
@@ -78,6 +80,8 @@ export async function subscribeToPush(userId) {
     return null
   }
 
+  console.log('Service Worker ready, checking for existing subscription...')
+
   // Check existing subscription
   let subscription = await registration.pushManager.getSubscription()
   if (subscription) {
@@ -88,6 +92,7 @@ export async function subscribeToPush(userId) {
 
   // Create new subscription
   try {
+    console.log('Creating push subscription with VAPID key...')
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
@@ -97,6 +102,7 @@ export async function subscribeToPush(userId) {
     return subscription
   } catch (error) {
     console.error('Push subscription failed:', error)
+    console.error('VAPID key used:', VAPID_PUBLIC_KEY)
     return null
   }
 }
