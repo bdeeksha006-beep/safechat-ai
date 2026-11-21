@@ -1,16 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
-import { ShieldCheck, ShieldAlert, X, AlertTriangle, Lightbulb, MessageSquareWarning, Send, ChevronRight } from 'lucide-react'
-import { riskColor, riskBg, SCAM_CATEGORIES } from '../safety/rules'
+import { ShieldCheck, ShieldAlert, X, AlertTriangle, Lightbulb, MessageSquareWarning, Send, ChevronRight, Flag, CheckCircle, RefreshCw } from 'lucide-react'
+import { riskColor, riskBg, SCAM_CATEGORIES, VERDICTS } from '../safety/rules'
 import { askAssistant } from '../lib/ai'
+import { getUserDecision, setUserDecision, scheduleAnalysis } from '../safety/engine'
+
+const VERDICT_COLORS = {
+  'SAFE': 'bg-green-100 text-green-800 border-green-300',
+  'POTENTIAL SCAM': 'bg-orange-100 text-orange-800 border-orange-300',
+  'HIGH RISK': 'bg-red-100 text-red-800 border-red-300',
+  'CRITICAL RISK': 'bg-red-200 text-red-900 border-red-400',
+  'INSUFFICIENT INFORMATION': 'bg-gray-100 text-gray-600 border-gray-300',
+}
 
 export default function SafetySidebar({ conversation, analysis, messages, user, onClose }) {
   const [question, setQuestion] = useState('')
   const [chat, setChat] = useState([]) // [{q, a}]
   const [asking, setAsking] = useState(false)
   const [expanded, setExpanded] = useState(null)
+  const [userDecision, setUserDecision] = useState(null)
+  const [showDecisionModal, setShowDecisionModal] = useState(null)
+  const [decisionReason, setDecisionReason] = useState('')
+  const [reanalysing, setReanalysing] = useState(false)
   const chatEnd = useRef(null)
 
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [chat])
+
+  useEffect(() => {
+    if (conversation && user) {
+      getUserDecision(conversation.id, user.id).then(setUserDecision)
+    }
+  }, [conversation?.id, user?.id])
 
   if (!conversation) {
     return (
@@ -25,6 +44,7 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
   const suspiciousMsgs = (analysis?.messages || []).filter(m => m.analysis?.isSuspicious)
   const risk = analysis?.riskLevel || 'MINIMAL'
   const score = analysis?.safetyScore ?? 100
+  const verdict = analysis?.verdict || 'INSUFFICIENT INFORMATION'
 
   async function ask(q) {
     if (!q.trim() || asking) return
@@ -42,6 +62,21 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
     } finally { setAsking(false); setQuestion('') }
   }
 
+  async function handleDecision(status) {
+    if (!user || !conversation) return
+    await setUserDecision(conversation.id, user.id, status, decisionReason)
+    setUserDecision({ status, reason: decisionReason })
+    setShowDecisionModal(null)
+    setDecisionReason('')
+  }
+
+  async function handleReanalyse() {
+    if (!conversation || !user) return
+    setReanalysing(true)
+    await scheduleAnalysis(conversation.id, messages, { userId: user.id, onResult: (r) => { /* parent handles */ } }, 0)
+    setReanalysing(false)
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
@@ -54,28 +89,78 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
-        {/* Section 1: overview */}
-        <div className={`rounded-xl border p-4 ${riskBg(risk)}`}>
-          <div className="flex items-center justify-between mb-1">
+        {/* Conversation Verdict */}
+        <div className={`rounded-xl border-2 p-4 ${VERDICT_COLORS[verdict] || 'bg-gray-50 border-gray-200'}`}>
+          <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{conversation.displayName}</span>
-            <span className={`text-xs font-bold ${riskColor(risk)}`}>{risk}</span>
+            <span className="text-xs font-bold">{verdict}</span>
           </div>
-          <div className="flex items-end gap-2">
-            <span className="text-4xl font-bold">{score}</span>
+          <div className="flex items-end gap-2 mb-2">
+            <span className="text-3xl font-bold">{score}</span>
             <span className="text-xs text-gray-500 mb-1">/ 100 safety score</span>
           </div>
-          <p className="text-[11px] text-gray-500 mt-2">
-            Score reflects detected communication risk only — not proof of wrongdoing.
-          </p>
+          <div className="flex gap-2 text-xs">
+            <span className="bg-white/50 rounded px-2 py-1">Risk: {analysis?.riskScore ?? 0}/100</span>
+            <span className="bg-white/50 rounded px-2 py-1">Confidence: {analysis?.aiConfidence != null ? `${Math.round(analysis.aiConfidence * 100)}%` : '—'}</span>
+          </div>
           {analysis?.aiUnavailable && (
-            <p className="text-[11px] text-orange-600 mt-1">⚠ AI analysis unavailable — showing rule-based results.</p>
+            <p className="text-[11px] text-orange-600 mt-2">⚠ AI analysis unavailable — showing rule-based results.</p>
           )}
           {analysis?.analyzedAt || analysis?.analyzed_at ? (
-            <p className="text-[10px] text-gray-400 mt-1">Analysed {new Date(analysis.analyzedAt || analysis.analyzed_at).toLocaleString()}</p>
+            <p className="text-[10px] text-gray-500 mt-1">Analysed {new Date(analysis.analyzedAt || analysis.analyzed_at).toLocaleString()}</p>
           ) : null}
+          <button onClick={handleReanalyse} disabled={reanalysing} className="mt-2 flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700">
+            <RefreshCw className={`w-3 h-3 ${reanalysing ? 'animate-spin' : ''}`} /> Reanalyse
+          </button>
         </div>
 
-        {/* Section 2: threat summary */}
+        {/* User Decision */}
+        {userDecision && (
+          <div className={`rounded-lg border p-3 ${userDecision.status === 'scam' ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              {userDecision.status === 'scam' ? <Flag className="w-4 h-4 text-red-600" /> : <CheckCircle className="w-4 h-4 text-green-600" />}
+              <span className="text-sm font-medium">You marked this as {userDecision.status === 'scam' ? 'SCAM' : 'SAFE'}</span>
+            </div>
+            {userDecision.reason && <p className="text-xs text-gray-600">Reason: {userDecision.reason}</p>}
+            <button onClick={() => setShowDecisionModal(userDecision.status)} className="text-xs text-brand-600 hover:underline mt-1">Change decision</button>
+          </div>
+        )}
+
+        {!userDecision && (
+          <div className="flex gap-2">
+            <button onClick={() => setShowDecisionModal('scam')} className="flex-1 flex items-center justify-center gap-1 bg-red-50 text-red-700 border border-red-200 rounded-lg px-3 py-2 text-sm hover:bg-red-100">
+              <Flag className="w-4 h-4" /> Mark as Scam
+            </button>
+            <button onClick={() => setShowDecisionModal('safe')} className="flex-1 flex items-center justify-center gap-1 bg-green-50 text-green-700 border border-green-200 rounded-lg px-3 py-2 text-sm hover:bg-green-100">
+              <CheckCircle className="w-4 h-4" /> Mark as Safe
+            </button>
+          </div>
+        )}
+
+        {/* Decision Modal */}
+        {showDecisionModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDecisionModal(null)}>
+            <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+              <h3 className="font-semibold mb-2">Mark as {showDecisionModal === 'scam' ? 'Scam' : 'Safe'}?</h3>
+              <p className="text-sm text-gray-600 mb-3">This will record your decision. The AI analysis will remain unchanged.</p>
+              <textarea
+                value={decisionReason}
+                onChange={e => setDecisionReason(e.target.value)}
+                placeholder="Optional reason (e.g., 'This is a fake bank call')"
+                className="w-full border rounded-lg px-3 py-2 text-sm mb-3"
+                rows={2}
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowDecisionModal(null)} className="flex-1 border rounded-lg px-4 py-2 text-sm">Cancel</button>
+                <button onClick={() => handleDecision(showDecisionModal)} className={`flex-1 rounded-lg px-4 py-2 text-sm text-white ${showDecisionModal === 'scam' ? 'bg-red-600' : 'bg-green-600'}`}>
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Threat Summary */}
         <div>
           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Threat summary</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -93,7 +178,7 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
           )}
         </div>
 
-        {/* Section 3: suspicious messages */}
+        {/* Suspicious Messages */}
         <div>
           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Flagged messages</h4>
           {suspiciousMsgs.length === 0 ? (
@@ -120,7 +205,7 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
           )}
         </div>
 
-        {/* Section 4: AI explanation */}
+        {/* AI Explanation */}
         {(analysis?.aiSummary || analysis?.aiPatterns?.length || analysis?.detected_patterns?.length) ? (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">AI explanation</h4>
@@ -135,7 +220,7 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
           </div>
         ) : null}
 
-        {/* Section 5: recommendations */}
+        {/* Recommendations */}
         {(analysis?.recommendations?.length || analysis?.aiRecommendations) ? (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Recommended actions</h4>
@@ -149,7 +234,7 @@ export default function SafetySidebar({ conversation, analysis, messages, user, 
           </div>
         ) : null}
 
-        {/* Section 6: Ask AI */}
+        {/* Ask AI */}
         <div>
           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Ask AI</h4>
           <div className="space-y-2 mb-2 max-h-48 overflow-y-auto">

@@ -2,6 +2,15 @@ import { supabase } from '../lib/supabase'
 import { analyzeConversation } from '../lib/ai'
 import { aggregateConversation } from './rules'
 
+// Conversation-level verdicts
+export const VERDICTS = {
+  SAFE: 'SAFE',
+  POTENTIAL_SCAM: 'POTENTIAL SCAM',
+  HIGH_RISK: 'HIGH RISK',
+  CRITICAL_RISK: 'CRITICAL RISK',
+  INSUFFICIENT_INFO: 'INSUFFICIENT INFORMATION',
+}
+
 // In-memory cache: conversationId -> { result, at, ai }
 const cache = new Map()
 const pending = new Map()
@@ -25,7 +34,7 @@ export async function loadStoredAnalysis(conversationId) {
     .maybeSingle()
   if (data) {
     const result = data.result || {}
-    setCache(conversationId, { ...result, riskScore: data.risk_score, safetyScore: data.safety_score, riskLevel: data.risk_level }, data.source === 'ai')
+    setCache(conversationId, { ...result, riskScore: data.risk_score, safetyScore: data.safety_score, riskLevel: data.risk_level, verdict: data.result?.verdict }, data.source === 'ai')
     return cache.get(conversationId).result
   }
   return null
@@ -45,6 +54,16 @@ export async function persistAnalysis(conversationId, result, source, userId) {
   })
 }
 
+// Determine conversation verdict from scores
+function getVerdict(riskScore, suspiciousCount, totalMessages) {
+  if (totalMessages < 2) return VERDICTS.INSUFFICIENT_INFO
+  if (riskScore >= 80) return VERDICTS.CRITICAL_RISK
+  if (riskScore >= 60) return VERDICTS.HIGH_RISK
+  if (riskScore >= 35) return VERDICTS.POTENTIAL_SCAM
+  if (riskScore >= 15) return VERDICTS.POTENTIAL_SCAM
+  return VERDICTS.SAFE
+}
+
 // Core analysis: run rule engine immediately, then try AI (debounced).
 // messages: [{id, sender_id, text, created_at}]
 export async function analyzeConversationMessages(conversationId, messages, { userId, useAi = true, onResult } = {}) {
@@ -52,24 +71,29 @@ export async function analyzeConversationMessages(conversationId, messages, { us
   const notify = (r) => { if (onResult) try { onResult(r) } catch {} }
 
   if (!useAi) {
-    setCache(conversationId, { result: ruleResult, at: Date.now(), ai: false })
-    notify(ruleResult)
-    return ruleResult
+    const verdict = getVerdict(ruleResult.riskScore, ruleResult.suspiciousCount, ruleResult.totalMessages)
+    const result = { ...ruleResult, verdict }
+    setCache(conversationId, { result, at: Date.now(), ai: false })
+    notify(result)
+    return result
   }
 
   try {
     const aiResult = await analyzeConversation({
       conversationId,
-      messages: messages.slice(-40).map(m => ({ id: m.id, sender_id: m.sender_id, text: m.text || m.content, created_at: m.created_at })),
+      messages: messages.slice(-50).map(m => ({ id: m.id, sender_id: m.sender_id, text: m.text || m.content, created_at: m.created_at })),
     })
     const merged = mergeResults(ruleResult, aiResult)
+    const verdict = aiResult?.verdict || getVerdict(merged.riskScore, merged.suspiciousCount, merged.totalMessages)
+    merged.verdict = verdict
     setCache(conversationId, { result: merged, at: Date.now(), ai: true })
     notify(merged)
     if (userId) persistAnalysis(conversationId, merged, 'ai', userId).catch(() => {})
     return merged
   } catch (err) {
     // AI unavailable -> rule result, flagged.
-    const fallback = { ...ruleResult, aiUnavailable: true, aiError: err.message }
+    const verdict = getVerdict(ruleResult.riskScore, ruleResult.suspiciousCount, ruleResult.totalMessages)
+    const fallback = { ...ruleResult, verdict, aiUnavailable: true, aiError: err.message }
     setCache(conversationId, { result: fallback, at: Date.now(), ai: false })
     notify(fallback)
     if (userId) persistAnalysis(conversationId, ruleResult, 'rules', userId).catch(() => {})
@@ -84,6 +108,19 @@ export function scheduleAnalysis(conversationId, messages, opts, delayMs = 1500)
     analyzeConversationMessages(conversationId, messages, opts).catch(() => {})
   }, delayMs)
   pending.set(conversationId, t)
+}
+
+// User decision functions
+export async function setUserDecision(conversationId, userId, status, reason = '') {
+  const { error } = await supabase.from('conversation_safety_status')
+    .upsert({ conversation_id: conversationId, user_id: userId, status, reason, updated_at: new Date().toISOString() })
+  if (error) throw error
+}
+
+export async function getUserDecision(conversationId, userId) {
+  const { data } = await supabase.from('conversation_safety_status')
+    .select('*').eq('conversation_id', conversationId).eq('user_id', userId).maybeSingle()
+  return data
 }
 
 // Merge rule-engine output with AI JSON output.

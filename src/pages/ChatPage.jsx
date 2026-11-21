@@ -6,6 +6,7 @@ import * as contacts from '../services/contacts'
 import * as msg from '../services/messages'
 import { scheduleAnalysis, getCachedAnalysis, loadStoredAnalysis } from '../safety/engine'
 import { aggregateConversation } from '../safety/rules'
+import { registerServiceWorker } from '../services/push'
 import SafetySidebar from '../components/SafetySidebar'
 import ChatWindow from '../components/ChatWindow'
 import LeftSidebar from '../components/LeftSidebar'
@@ -31,6 +32,8 @@ export default function ChatPage() {
     const onVis = () => document.visibilityState === 'visible' ? contacts.heartbeat(user.id) : contacts.goOffline(user.id)
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('beforeunload', () => contacts.goOffline(user.id))
+    // Register service worker for push notifications
+    registerServiceWorker()
     refresh()
     const t = setInterval(refresh, 30000)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); contacts.goOffline(user.id) }

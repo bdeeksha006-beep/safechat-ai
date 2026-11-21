@@ -29,6 +29,14 @@ export const SCAM_CATEGORIES = {
   MALWARE: 'Malicious attachment / app',
 }
 
+export const VERDICTS = {
+  SAFE: 'SAFE',
+  POTENTIAL_SCAM: 'POTENTIAL SCAM',
+  HIGH_RISK: 'HIGH RISK',
+  CRITICAL_RISK: 'CRITICAL RISK',
+  INSUFFICIENT_INFO: 'INSUFFICIENT INFORMATION',
+}
+
 // Each rule: { id, category, patterns: [RegExp], weight (0-100),
 //              requiresContext?, note, severity: 'low'|'medium'|'high'|'critical' }
 // Patterns are tested case-insensitively. Weight contributes to message risk.

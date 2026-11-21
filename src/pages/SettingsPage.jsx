@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, Bell, BellOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { getNotificationPreferences, updateNotificationPreferences, subscribeToPush, unsubscribeFromPush, isPushSupported } from '../services/push'
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [privacy, setPrivacy] = useState(null)
+  const [notifs, setNotifs] = useState(null)
   const [saved, setSaved] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -23,6 +26,19 @@ export default function SettingsPage() {
         setPrivacy(created || defaults)
       }
     })
+    getNotificationPreferences(user.id).then((data) => {
+      if (data) setNotifs(data)
+      else setNotifs({
+        user_id: user.id,
+        push_enabled: true,
+        new_message_notifications: true,
+        group_message_notifications: true,
+        security_alert_notifications: true,
+        sound_enabled: true,
+        message_preview_enabled: false,
+        muted_conversations: [],
+      })
+    })
   }, [user])
 
   async function save() {
@@ -32,10 +48,27 @@ export default function SettingsPage() {
     const { error: e2 } = await supabase.from('user_privacy_settings')
       .upsert({ user_id: user.id, ai_analysis_enabled: privacy.ai_analysis_enabled, retain_analyses_days: privacy.retain_analyses_days })
     if (e2) console.error('Privacy save error:', e2)
+    if (notifs) {
+      await updateNotificationPreferences(user.id, notifs)
+    }
     setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
-  if (!profile || !privacy) return <div className="h-full grid place-items-center text-gray-400">Loading…</div>
+  async function togglePush() {
+    if (!isPushSupported()) {
+      alert('Push notifications not supported in this browser')
+      return
+    }
+    if (pushEnabled) {
+      await unsubscribeFromPush(user.id)
+      setPushEnabled(false)
+    } else {
+      const sub = await subscribeToPush(user.id)
+      setPushEnabled(!!sub)
+    }
+  }
+
+  if (!profile || !privacy || !notifs) return <div className="h-full grid place-items-center text-gray-400">Loading…</div>
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -77,6 +110,37 @@ export default function SettingsPage() {
           <p className="text-[11px] text-gray-400">
             SafeChat AI is not end-to-end encrypted. Message content is stored on Supabase and may be processed by the AI provider when analysis is enabled.
           </p>
+        </div>
+
+        <div className="bg-white rounded-xl border p-5 space-y-3">
+          <h2 className="font-semibold flex items-center gap-2"><Bell className="w-4 h-4" /> Notifications</h2>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={pushEnabled} onChange={togglePush} className="w-4 h-4" />
+            <div>
+              <div className="text-sm font-medium">Push notifications</div>
+              <div className="text-xs text-gray-500">Get notified even when SafeChat is closed (requires browser permission)</div>
+            </div>
+          </label>
+          {pushEnabled && (
+            <div className="space-y-2 pl-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={notifs.new_message_notifications} onChange={e => setNotifs({ ...notifs, new_message_notifications: e.target.checked })} className="w-4 h-4" />
+                <span className="text-sm">New message notifications</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={notifs.group_message_notifications} onChange={e => setNotifs({ ...notifs, group_message_notifications: e.target.checked })} className="w-4 h-4" />
+                <span className="text-sm">Group message notifications</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={notifs.security_alert_notifications} onChange={e => setNotifs({ ...notifs, security_alert_notifications: e.target.checked })} className="w-4 h-4" />
+                <span className="text-sm">Security alerts</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={notifs.message_preview_enabled} onChange={e => setNotifs({ ...notifs, message_preview_enabled: e.target.checked })} className="w-4 h-4" />
+                <span className="text-sm">Show message preview in notifications</span>
+              </label>
+            </div>
+          )}
         </div>
 
         <button onClick={save} className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-brand-700">

@@ -24,7 +24,8 @@ Rules:
   "evidence": [{"message_id": string, "reason": string}],
   "detected_patterns": string[],
   "recommendations": string[],
-  "analysis_summary": string
+  "analysis_summary": string,
+  "verdict": "SAFE"|"POTENTIAL SCAM"|"HIGH RISK"|"CRITICAL RISK"|"INSUFFICIENT INFORMATION"
 }
 No markdown, no commentary.`
 
@@ -61,6 +62,7 @@ function validateAnalysis(obj) {
     detected_patterns: Array.isArray(obj.detected_patterns) ? obj.detected_patterns.map(String).slice(0, 20) : [],
     recommendations: Array.isArray(obj.recommendations) ? obj.recommendations.map(String).slice(0, 20) : [],
     analysis_summary: String(obj.analysis_summary || '').slice(0, 2000),
+    verdict: String(obj.verdict || '').toUpperCase(),
   }
 }
 
@@ -106,9 +108,9 @@ export const analyzeConversation = async (payload) => {
 
 export const askAssistant = async (payload) => {
   try {
-    const result = await callOpenRouterDirect({ messages: payload.messages })
+    const result = await callOpenRouterDirect({ messages: payload.messages, question: payload.question })
     return {
-      answer: result.analysis_summary || (result.recommendations || []).join(' ') || 'No concerning patterns detected.',
+      answer: result.answer || result.analysis_summary || (result.recommendations || []).join(' ') || 'No concerning patterns detected.',
       risk_level: result.risk_level,
       categories: result.scam_categories,
       evidence: result.evidence,
