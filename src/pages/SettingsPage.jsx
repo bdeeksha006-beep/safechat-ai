@@ -55,11 +55,17 @@ export default function SettingsPage() {
   }
 
   async function togglePush() {
+    console.log('=== TOGGLE PUSH DEBUG ===')
+    console.log('isPushSupported:', isPushSupported())
+    console.log('pushEnabled state:', pushEnabled)
+    console.log('user:', user?.id)
+    
     if (!isPushSupported()) {
       alert('Push notifications not supported in this browser')
       return
     }
-    console.log('Toggle push clicked, current state:', pushEnabled)
+    
+    console.log('Calling subscribeToPush...')
     if (pushEnabled) {
       await unsubscribeFromPush(user.id)
       setPushEnabled(false)
@@ -67,16 +73,24 @@ export default function SettingsPage() {
     } else {
       try {
         const sub = await subscribeToPush(user.id)
-        console.log('Push subscription result:', sub)
+        console.log('=== SUBSCRIPTION RESULT ===')
+        console.log('Subscription:', sub)
+        console.log('Is subscription valid:', !!sub)
         setPushEnabled(!!sub)
         if (!sub) {
           alert('Failed to enable push notifications. Check browser console for details.')
+        } else {
+          alert('Push notifications enabled successfully!')
         }
       } catch (e) {
-        console.error('Push subscription error:', e)
+        console.error('=== PUSH SUBSCRIPTION ERROR ===')
+        console.error('Error:', e)
+        console.error('Error message:', e.message)
+        console.error('Error stack:', e.stack)
         alert('Error enabling push notifications: ' + e.message)
       }
     }
+    console.log('=== TOGGLE PUSH DEBUG END ===')
   }
 
   if (!profile || !privacy || !notifs) return <div className="h-full grid place-items-center text-gray-400">Loading…</div>

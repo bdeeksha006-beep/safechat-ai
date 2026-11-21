@@ -38,7 +38,14 @@ export async function registerServiceWorker() {
 
 // Check if push is supported
 export function isPushSupported() {
-  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  console.log('isPushSupported check:', {
+    serviceWorker: 'serviceWorker' in navigator,
+    PushManager: 'PushManager' in window,
+    Notification: 'Notification' in window,
+    result: supported
+  })
+  return supported
 }
 
 // Get notification permission
@@ -55,26 +62,37 @@ export async function requestNotificationPermission() {
 
 // Subscribe to push notifications
 export async function subscribeToPush(userId) {
+  console.log('=== SUBSCRIBE TO PUSH DEBUG ===')
+  console.log('userId:', userId)
+  console.log('isPushSupported:', isPushSupported())
+  
   if (!isPushSupported()) {
     console.warn('Push notifications not supported')
     return null
   }
 
   const permission = await getNotificationPermission()
+  console.log('Notification permission:', permission)
+  
   if (permission === 'denied') {
     console.warn('Notification permission denied')
     return null
   }
 
   if (permission === 'default') {
+    console.log('Requesting notification permission...')
     const newPermission = await requestNotificationPermission()
+    console.log('New permission:', newPermission)
     if (newPermission !== 'granted') {
       console.warn('Notification permission not granted')
       return null
     }
   }
 
+  console.log('Waiting for service worker...')
   const registration = await navigator.serviceWorker.ready
+  console.log('Service worker registration:', registration)
+  
   if (!registration) {
     console.error('Service Worker not ready')
     return null
