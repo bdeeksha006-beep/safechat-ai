@@ -192,8 +192,8 @@ export function showLocalNotification(title, body, options = {}) {
   if (Notification.permission === 'granted') {
     new Notification(title, {
       body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: '/icon-192.svg',
+      badge: '/icon-192.svg',
       ...options,
     })
   }
